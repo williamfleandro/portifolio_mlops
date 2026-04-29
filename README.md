@@ -88,3 +88,4 @@ Frontend → Backend → MLflow → MinIO
 ## 👨‍💻 Autor
 
 William Ferreira Leandro
+linkedin: https://www.linkedin.com/in/william-ferreira-leandro-5b75a925/
