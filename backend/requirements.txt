@@ -1,0 +1,9 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+mlflow==3.11.1
+pandas==2.3.2
+numpy==2.3.2
+scikit-learn
+cloudpickle
+boto3
+botocore

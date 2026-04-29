@@ -1,0 +1,13 @@
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: mlflow-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: mlflow
+      MINIO_ROOT_PASSWORD: mlflow123456
+    volumes:
+      - ./minio/data:/data

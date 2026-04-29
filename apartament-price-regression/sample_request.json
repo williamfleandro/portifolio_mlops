@@ -1,0 +1,15 @@
+{
+  "dataframe_records": [
+    {
+      "area_m2": 85,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "floor": 8,
+      "parking_spaces": 1,
+      "neighborhood_score": 8.2,
+      "condo_fee": 650.0,
+      "age_years": 7,
+      "distance_to_center_km": 5.4
+    }
+  ]
+}

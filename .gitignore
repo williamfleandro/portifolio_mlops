@@ -1,0 +1,17 @@
+.venv/
+.venv-monitoring/
+__pycache__/
+*.pyc
+
+mlruns/
+mlartifacts/
+minio/data/
+local_artifacts/
+exported_model/
+
+node_modules/
+dist/
+.env
+*.log
+
+.DS_Store

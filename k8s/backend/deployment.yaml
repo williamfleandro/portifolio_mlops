@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apartment-price-backend
+  namespace: mlops
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: apartment-price-backend
+  template:
+    metadata:
+      labels:
+        app: apartment-price-backend
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3d-argodemo-server-0
+      containers:
+        - name: backend
+          image: apartment-price-backend:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://host.k3d.internal:5001"
+            - name: DEFAULT_MODEL_URI
+              value: "models:/apartment-price-regression@champion"
+            - name: AWS_ACCESS_KEY_ID
+              value: "mlflow"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "mlflow123456"
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: "http://host.k3d.internal:9000"
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 10
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 10

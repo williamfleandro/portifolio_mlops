@@ -1,0 +1,170 @@
+{
+  "report_path": "/Users/wfleandro/mlflow-test/reports/data_drift_report.html",
+  "reference_rows": 2500,
+  "current_rows": 800,
+  "features": [
+    "area_m2",
+    "bedrooms",
+    "bathrooms",
+    "floor",
+    "parking_spaces",
+    "neighborhood_score",
+    "condo_fee",
+    "age_years",
+    "distance_to_center_km"
+  ],
+  "note": "Abra o HTML para verificar o relatório visual. Use o JSON para automação.",
+  "raw_snapshot": {
+    "metrics": [
+      {
+        "id": "15e89f895b482f9b84ba7274ed18a106",
+        "metric_name": "DriftedColumnsCount(drift_share=0.5)",
+        "config": {
+          "type": "evidently:metric_v2:DriftedColumnsCount",
+          "drift_share": 0.5
+        },
+        "value": {
+          "count": 9.0,
+          "share": 1.0
+        }
+      },
+      {
+        "id": "b06c0c7a7381738726492853e6c5743a",
+        "metric_name": "ValueDrift(column=area_m2,method=Wasserstein distance (normed),threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "area_m2",
+          "method": "Wasserstein distance (normed)",
+          "threshold": 0.1
+        },
+        "value": 0.6218145793599535
+      },
+      {
+        "id": "016ec7cc382efa39de73d980a5936335",
+        "metric_name": "ValueDrift(column=floor,method=Wasserstein distance (normed),threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "floor",
+          "method": "Wasserstein distance (normed)",
+          "threshold": 0.1
+        },
+        "value": 0.283189413639709
+      },
+      {
+        "id": "2429cb6b3b7dec9992259e1b67384db2",
+        "metric_name": "ValueDrift(column=neighborhood_score,method=Wasserstein distance (normed),threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "neighborhood_score",
+          "method": "Wasserstein distance (normed)",
+          "threshold": 0.1
+        },
+        "value": 0.540930087483312
+      },
+      {
+        "id": "30413e90837fb88c73f94301984e2f61",
+        "metric_name": "ValueDrift(column=condo_fee,method=Wasserstein distance (normed),threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "condo_fee",
+          "method": "Wasserstein distance (normed)",
+          "threshold": 0.1
+        },
+        "value": 0.6442669023922558
+      },
+      {
+        "id": "3acf044ff6c9f4748372a97e2c5994d8",
+        "metric_name": "ValueDrift(column=age_years,method=Wasserstein distance (normed),threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "age_years",
+          "method": "Wasserstein distance (normed)",
+          "threshold": 0.1
+        },
+        "value": 0.383652477026309
+      },
+      {
+        "id": "82f9fd22f1b7cf3cc9524388b8441aec",
+        "metric_name": "ValueDrift(column=distance_to_center_km,method=Wasserstein distance (normed),threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "distance_to_center_km",
+          "method": "Wasserstein distance (normed)",
+          "threshold": 0.1
+        },
+        "value": 0.493075371278638
+      },
+      {
+        "id": "57754c32b195592f789d6f2a07199c45",
+        "metric_name": "ValueDrift(column=bedrooms,method=Jensen-Shannon distance,threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "bedrooms",
+          "method": "Jensen-Shannon distance",
+          "threshold": 0.1
+        },
+        "value": 0.3128363318406948
+      },
+      {
+        "id": "12d0f3c47d0e292390cb82e9dc8809c3",
+        "metric_name": "ValueDrift(column=bathrooms,method=Jensen-Shannon distance,threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "bathrooms",
+          "method": "Jensen-Shannon distance",
+          "threshold": 0.1
+        },
+        "value": 0.31586163274902135
+      },
+      {
+        "id": "9d9f70f576aec654f675ac5590543238",
+        "metric_name": "ValueDrift(column=parking_spaces,method=Jensen-Shannon distance,threshold=0.1)",
+        "config": {
+          "type": "evidently:metric_v2:ValueDrift",
+          "column": "parking_spaces",
+          "method": "Jensen-Shannon distance",
+          "threshold": 0.1
+        },
+        "value": 0.2999511244023377
+      }
+    ],
+    "tests": []
+  },
+  "drifted_features_count": 5,
+  "total_features": 9,
+  "drift_ratio": 0.5556,
+  "drifted_features": [
+    {
+      "feature": "area_m2",
+      "reference_mean": 136.6344,
+      "current_mean": 173.42,
+      "z_shift": 0.6217
+    },
+    {
+      "feature": "bathrooms",
+      "reference_mean": 1.9732,
+      "current_mean": 2.5475,
+      "z_shift": 0.7002
+    },
+    {
+      "feature": "parking_spaces",
+      "reference_mean": 0.9848,
+      "current_mean": 1.47,
+      "z_shift": 0.598
+    },
+    {
+      "feature": "neighborhood_score",
+      "reference_mean": 7.0308,
+      "current_mean": 7.9628,
+      "z_shift": 0.5408
+    },
+    {
+      "feature": "condo_fee",
+      "reference_mean": 1234.4884,
+      "current_mean": 1597.5601,
+      "z_shift": 0.6441
+    }
+  ],
+  "retrain_required": true,
+  "rule": "Retreino sugerido quando 30% ou mais das features apresentam z_shift >= 0.5."
+}

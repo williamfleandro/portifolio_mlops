@@ -1,0 +1,33 @@
+{
+  "run_id": "f37d35282f0f46269b878f579589ef5f",
+  "experiment_name": "apartment-price-regression-minio",
+  "tracking_uri": "http://127.0.0.1:5001",
+  "metrics": {
+    "validation": {
+      "mae": 232542.50621083967,
+      "rmse": 299885.59093831194,
+      "r2": 0.8047768087441184,
+      "mape": 18.753527857480858
+    },
+    "test": {
+      "mae": 237149.79764049491,
+      "rmse": 309192.828417962,
+      "r2": 0.7961093242924078,
+      "mape": 19.187157921739946
+    }
+  },
+  "model_uri": "models:/m-faa4083fa31f4555ac492c41c936c3f8",
+  "registry": {
+    "registered_model_name": "apartment-price-regression",
+    "model_version": "12",
+    "model_registry_uri": "models:/apartment-price-regression/12",
+    "model_alias_uri": "models:/apartment-price-regression@champion",
+    "registered_from_model_uri": "models:/m-faa4083fa31f4555ac492c41c936c3f8",
+    "run_id": "f37d35282f0f46269b878f579589ef5f"
+  },
+  "datasets": {
+    "train": "/Users/wfleandro/mlflow-test/apartament-price-regression/data/train_apartments.csv",
+    "validation": "/Users/wfleandro/mlflow-test/apartament-price-regression/data/validation_apartments.csv",
+    "test": "/Users/wfleandro/mlflow-test/apartament-price-regression/data/test_apartments.csv"
+  }
+}

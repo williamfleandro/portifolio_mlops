@@ -1,0 +1,18 @@
+models:
+  - name: apartment-price-regression
+    task_type: regression
+    reference_data: data/reference/reference_apartments.csv
+    current_data: data/current/current_apartments.csv
+    features:
+      - area_m2
+      - bedrooms
+      - bathrooms
+      - floor
+      - parking_spaces
+      - neighborhood_score
+      - condo_fee
+      - age_years
+      - distance_to_center_km
+    retrain_rule:
+      max_drift_ratio: 0.30
+      max_z_shift: 0.50

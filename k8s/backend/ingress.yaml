@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apartment-price-backend
+  namespace: mlops
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: apartment-api.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: apartment-price-backend
+                port:
+                  number: 8000
