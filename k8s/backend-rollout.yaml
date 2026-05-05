@@ -1,0 +1,75 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: apartment-price-backend
+  namespace: mlops-demo
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+
+  selector:
+    matchLabels:
+      app: apartment-price-backend
+
+  strategy:
+    canary:
+      steps:
+        - setWeight: 20
+        - pause:
+            duration: 30s
+        - setWeight: 50
+        - pause:
+            duration: 30s
+        - setWeight: 100
+
+  template:
+    metadata:
+      labels:
+        app: apartment-price-backend
+    spec:
+      containers:
+        - name: backend
+          image: apartment-price-backend:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+
+          env:
+            - name: MLFLOW_TRACKING_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: mlflow-config
+                  key: MLFLOW_TRACKING_URI
+
+            - name: MLFLOW_S3_ENDPOINT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mlflow-config
+                  key: MLFLOW_S3_ENDPOINT_URL
+
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: AWS_ACCESS_KEY_ID
+
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apartment-price-backend
+  namespace: mlops-demo
+spec:
+  type: ClusterIP
+  selector:
+    app: apartment-price-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

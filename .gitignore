@@ -17,3 +17,17 @@ dist/
 .DS_Store
 notes.txt
 notes.txt
+
+# Local MLflow / MinIO artifacts
+mlflow.db
+minio-data/
+mlruns/
+artifact_test.txt
+teste_minio_mlflow.py
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local environment
+.venv/
