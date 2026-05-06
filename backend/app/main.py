@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import csv
+import json
 import os
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
 from threading import RLock
 from typing import Any, Optional
 
@@ -10,6 +15,8 @@ import mlflow.pyfunc
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from mlflow.tracking import MlflowClient
+from prometheus_client import Counter, Gauge, Histogram
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 
@@ -19,7 +26,60 @@ DEFAULT_MODEL_URI = os.getenv(
     "models:/apartment-price-regression@champion",
 )
 
+PREDICTION_LOG_PATH = Path(
+    os.getenv("PREDICTION_LOG_PATH", "/app/data/predictions/predictions_log.csv")
+)
+
+DRIFT_METRICS_PATH = Path(
+    os.getenv("DRIFT_METRICS_PATH", "/app/data/monitoring/latest_drift_metrics.json")
+)
+
+LOG_PREDICTIONS = os.getenv("LOG_PREDICTIONS", "true").lower() in {"1", "true", "yes", "y"}
+
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+
+MODEL_PREDICTION_TOTAL = Counter(
+    "model_prediction_total",
+    "Total de predicoes executadas pelo modelo.",
+    ["model_name", "model_version", "model_alias", "endpoint", "status"],
+)
+
+MODEL_PREDICTION_LATENCY_SECONDS = Histogram(
+    "model_prediction_latency_seconds",
+    "Tempo de inferencia do modelo em segundos.",
+    ["model_name", "model_version", "model_alias", "endpoint"],
+)
+
+MODEL_PREDICTION_BATCH_SIZE = Histogram(
+    "model_prediction_batch_size",
+    "Quantidade de registros enviados por requisicao de inferencia.",
+    ["model_name", "model_version", "model_alias", "endpoint"],
+)
+
+MODEL_LAST_PREDICTION_VALUE = Gauge(
+    "model_last_prediction_value",
+    "Ultimo valor previsto pelo modelo.",
+    ["model_name", "model_version", "model_alias", "endpoint"],
+)
+
+MODEL_DATA_DRIFT_SCORE = Gauge(
+    "model_data_drift_score",
+    "Score consolidado de data drift calculado pelo Evidently.",
+    ["model_name", "model_version", "model_alias"],
+)
+
+MODEL_PREDICTION_DRIFT_SCORE = Gauge(
+    "model_prediction_drift_score",
+    "Score consolidado de prediction drift calculado pelo Evidently.",
+    ["model_name", "model_version", "model_alias"],
+)
+
+MODEL_DRIFT_DETECTED = Gauge(
+    "model_drift_detected",
+    "Indicador binario de drift detectado pelo Evidently: 1 para drift, 0 para sem drift.",
+    ["model_name", "model_version", "model_alias"],
+)
 
 
 class ApartmentFeatures(BaseModel):
@@ -70,6 +130,14 @@ class ModelReloadResponse(BaseModel):
     model_version: Optional[str]
     model_alias: Optional[str] = None
     model_source: Optional[str] = None
+
+
+class DriftRefreshResponse(BaseModel):
+    status: str
+    drift_metrics_path: str
+    data_drift_score: Optional[float] = None
+    prediction_drift_score: Optional[float] = None
+    drift_detected: Optional[bool] = None
 
 
 def resolve_model_registry_info(model_uri: str) -> dict[str, Optional[str]]:
@@ -131,6 +199,141 @@ def normalize_features(df: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
+
+def model_to_dict(item: BaseModel) -> dict[str, Any]:
+    if hasattr(item, "model_dump"):
+        return item.model_dump()
+
+    return item.dict()
+
+
+def now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def safe_label(value: Optional[str]) -> str:
+    return str(value) if value not in {None, ""} else "unknown"
+
+
+def prediction_metric_labels(
+    info: dict[str, Optional[str]],
+    endpoint: str,
+    status: str,
+) -> dict[str, str]:
+    return {
+        "model_name": safe_label(info.get("model_name")),
+        "model_version": safe_label(info.get("model_version")),
+        "model_alias": safe_label(info.get("model_alias")),
+        "endpoint": endpoint,
+        "status": status,
+    }
+
+
+def latency_metric_labels(
+    info: dict[str, Optional[str]],
+    endpoint: str,
+) -> dict[str, str]:
+    return {
+        "model_name": safe_label(info.get("model_name")),
+        "model_version": safe_label(info.get("model_version")),
+        "model_alias": safe_label(info.get("model_alias")),
+        "endpoint": endpoint,
+    }
+
+
+def drift_metric_labels(info: dict[str, Optional[str]]) -> dict[str, str]:
+    return {
+        "model_name": safe_label(info.get("model_name")),
+        "model_version": safe_label(info.get("model_version")),
+        "model_alias": safe_label(info.get("model_alias")),
+    }
+
+
+def append_prediction_logs(
+    endpoint: str,
+    info: dict[str, Optional[str]],
+    input_records: list[dict[str, Any]],
+    predictions: list[float],
+    latency_seconds: float,
+    status: str,
+    error_message: Optional[str] = None,
+) -> None:
+    if not LOG_PREDICTIONS:
+        return
+
+    try:
+        PREDICTION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_exists = PREDICTION_LOG_PATH.exists()
+
+        fieldnames = [
+            "timestamp",
+            "endpoint",
+            "status",
+            "model_uri",
+            "model_name",
+            "model_version",
+            "model_alias",
+            "prediction",
+            "score",
+            "latency_ms",
+            "input_features",
+            "error_message",
+        ]
+
+        with PREDICTION_LOG_PATH.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+            if not file_exists:
+                writer.writeheader()
+
+            if predictions:
+                for input_record, prediction in zip(input_records, predictions):
+                    writer.writerow(
+                        {
+                            "timestamp": now_utc_iso(),
+                            "endpoint": endpoint,
+                            "status": status,
+                            "model_uri": info.get("model_uri"),
+                            "model_name": info.get("model_name"),
+                            "model_version": info.get("model_version"),
+                            "model_alias": info.get("model_alias"),
+                            "prediction": prediction,
+                            "score": prediction,
+                            "latency_ms": round(latency_seconds * 1000, 4),
+                            "input_features": json.dumps(
+                                input_record,
+                                ensure_ascii=False,
+                                default=str,
+                            ),
+                            "error_message": error_message,
+                        }
+                    )
+            else:
+                writer.writerow(
+                    {
+                        "timestamp": now_utc_iso(),
+                        "endpoint": endpoint,
+                        "status": status,
+                        "model_uri": info.get("model_uri"),
+                        "model_name": info.get("model_name"),
+                        "model_version": info.get("model_version"),
+                        "model_alias": info.get("model_alias"),
+                        "prediction": None,
+                        "score": None,
+                        "latency_ms": round(latency_seconds * 1000, 4),
+                        "input_features": json.dumps(
+                            input_records,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                        "error_message": error_message,
+                    }
+                )
+
+    except Exception as log_error:
+        print(f"[prediction-logging-warning] Falha ao gravar log de predicao: {log_error}")
+
+
 class ModelStore:
     def __init__(self) -> None:
         self._lock = RLock()
@@ -183,17 +386,132 @@ class ModelStore:
 store = ModelStore()
 
 
+def predict_with_observability(
+    request: PredictRequest,
+    endpoint: str,
+) -> tuple[list[float], dict[str, Optional[str]]]:
+    start_time = time.perf_counter()
+    input_records: list[dict[str, Any]] = []
+
+    try:
+        input_records = [model_to_dict(item) for item in request.dataframe_records]
+        df = pd.DataFrame(input_records)
+        df = normalize_features(df)
+
+        preds = store.predict(df)
+        latency_seconds = time.perf_counter() - start_time
+        info = store.info()
+
+        MODEL_PREDICTION_TOTAL.labels(
+            **prediction_metric_labels(info=info, endpoint=endpoint, status="success")
+        ).inc(len(preds))
+
+        MODEL_PREDICTION_LATENCY_SECONDS.labels(
+            **latency_metric_labels(info=info, endpoint=endpoint)
+        ).observe(latency_seconds)
+
+        MODEL_PREDICTION_BATCH_SIZE.labels(
+            **latency_metric_labels(info=info, endpoint=endpoint)
+        ).observe(len(preds))
+
+        if preds:
+            MODEL_LAST_PREDICTION_VALUE.labels(
+                **latency_metric_labels(info=info, endpoint=endpoint)
+            ).set(preds[-1])
+
+        append_prediction_logs(
+            endpoint=endpoint,
+            info=info,
+            input_records=input_records,
+            predictions=preds,
+            latency_seconds=latency_seconds,
+            status="success",
+        )
+
+        return preds, info
+
+    except Exception as e:
+        latency_seconds = time.perf_counter() - start_time
+        info = store.info()
+
+        MODEL_PREDICTION_TOTAL.labels(
+            **prediction_metric_labels(info=info, endpoint=endpoint, status="error")
+        ).inc()
+
+        MODEL_PREDICTION_LATENCY_SECONDS.labels(
+            **latency_metric_labels(info=info, endpoint=endpoint)
+        ).observe(latency_seconds)
+
+        append_prediction_logs(
+            endpoint=endpoint,
+            info=info,
+            input_records=input_records,
+            predictions=[],
+            latency_seconds=latency_seconds,
+            status="error",
+            error_message=str(e),
+        )
+
+        raise
+
+
+def refresh_drift_metrics() -> DriftRefreshResponse:
+    info = store.info()
+
+    if not DRIFT_METRICS_PATH.exists():
+        return DriftRefreshResponse(
+            status="not_found",
+            drift_metrics_path=str(DRIFT_METRICS_PATH),
+        )
+
+    with DRIFT_METRICS_PATH.open("r", encoding="utf-8") as f:
+        metrics = json.load(f)
+
+    data_drift_score = metrics.get("data_drift_score")
+    prediction_drift_score = metrics.get("prediction_drift_score")
+    drift_detected = metrics.get("drift_detected")
+
+    labels = drift_metric_labels(info)
+
+    if data_drift_score is not None:
+        MODEL_DATA_DRIFT_SCORE.labels(**labels).set(float(data_drift_score))
+
+    if prediction_drift_score is not None:
+        MODEL_PREDICTION_DRIFT_SCORE.labels(**labels).set(float(prediction_drift_score))
+
+    if drift_detected is not None:
+        MODEL_DRIFT_DETECTED.labels(**labels).set(1 if bool(drift_detected) else 0)
+
+    return DriftRefreshResponse(
+        status="refreshed",
+        drift_metrics_path=str(DRIFT_METRICS_PATH),
+        data_drift_score=float(data_drift_score) if data_drift_score is not None else None,
+        prediction_drift_score=(
+            float(prediction_drift_score) if prediction_drift_score is not None else None
+        ),
+        drift_detected=bool(drift_detected) if drift_detected is not None else None,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.load(DEFAULT_MODEL_URI, model_name="apartment-price-regression")
+
+    try:
+        refresh_drift_metrics()
+    except Exception as e:
+        print(f"[drift-metrics-warning] Falha ao carregar metricas de drift no startup: {e}")
+
     yield
 
 
 app = FastAPI(
     title="Apartment Price API",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/health")
@@ -265,11 +583,7 @@ def reload_model() -> ModelReloadResponse:
 @app.post("/predict", response_model=PredictResponse)
 def predict(request: PredictRequest) -> PredictResponse:
     try:
-        df = pd.DataFrame([item.model_dump() for item in request.dataframe_records])
-        df = normalize_features(df)
-
-        preds = store.predict(df)
-        info = store.info()
+        preds, info = predict_with_observability(request=request, endpoint="/predict")
 
         return PredictResponse(
             predictions=preds,
@@ -286,12 +600,22 @@ def predict(request: PredictRequest) -> PredictResponse:
 @app.post("/invocations")
 def invocations(request: PredictRequest) -> dict[str, Any]:
     try:
-        df = pd.DataFrame([item.model_dump() for item in request.dataframe_records])
-        df = normalize_features(df)
-
-        preds = store.predict(df)
-
+        preds, _ = predict_with_observability(request=request, endpoint="/invocations")
         return {"predictions": preds}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Falha na predição: {e}")
+
+
+@app.post("/drift/refresh", response_model=DriftRefreshResponse)
+def drift_refresh() -> DriftRefreshResponse:
+    try:
+        return refresh_drift_metrics()
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Falha ao atualizar métricas de drift: {e}")
+
+
+@app.get("/drift/status", response_model=DriftRefreshResponse)
+def drift_status() -> DriftRefreshResponse:
+    return refresh_drift_metrics()

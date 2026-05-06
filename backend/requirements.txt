@@ -7,3 +7,5 @@ scikit-learn
 cloudpickle
 boto3
 botocore
+prometheus-client
+prometheus-fastapi-instrumentator
