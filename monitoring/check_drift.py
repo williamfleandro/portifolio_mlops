@@ -17,6 +17,7 @@ CURRENT_PATH = PROJECT_ROOT / "data" / "current" / "current_apartments.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 HTML_REPORT_PATH = REPORTS_DIR / "data_drift_report.html"
 JSON_RESULT_PATH = REPORTS_DIR / "drift_result.json"
+LATEST_METRICS_PATH = REPORTS_DIR / "latest_drift_metrics.json"
 
 FEATURES = [
     "area_m2",
@@ -95,14 +96,13 @@ def run_drift_report(reference: pd.DataFrame, current: pd.DataFrame) -> dict:
 
     snapshot = report.run(reference_data=reference, current_data=current)
 
-    # Evidently API nova: salvar HTML a partir do snapshot/evaluation result
     if hasattr(snapshot, "save_html"):
         snapshot.save_html(str(HTML_REPORT_PATH))
     elif hasattr(snapshot, "save"):
         snapshot.save(str(HTML_REPORT_PATH))
     else:
         HTML_REPORT_PATH.write_text(
-            f"""
+            """
             <html>
               <head><title>Data Drift Report</title></head>
               <body>
@@ -173,20 +173,61 @@ def decide_retrain(reference: pd.DataFrame, current: pd.DataFrame) -> dict:
     }
 
 
+def build_latest_metrics(
+    reference: pd.DataFrame,
+    current: pd.DataFrame,
+    retrain_decision: dict,
+) -> dict:
+    z_shifts = [
+        item["z_shift"]
+        for item in retrain_decision.get("drifted_features", [])
+    ]
+
+    drift_ratio = float(retrain_decision.get("drift_ratio", 0.0))
+    retrain_required = bool(retrain_decision.get("retrain_required", False))
+
+    return {
+        "data_drift_score": drift_ratio,
+        "prediction_drift_score": 0.0,
+        "drift_detected": retrain_required,
+        "drifted_features_count": int(retrain_decision.get("drifted_features_count", 0)),
+        "drifted_features_ratio": drift_ratio,
+        "total_features_count": int(retrain_decision.get("total_features", len(FEATURES))),
+        "max_feature_drift_score": float(max(z_shifts)) if z_shifts else 0.0,
+        "mean_feature_drift_score": float(sum(z_shifts) / len(z_shifts)) if z_shifts else 0.0,
+        "current_dataset_rows": int(len(current)),
+        "reference_dataset_rows": int(len(reference)),
+        "retrain_required": retrain_required,
+    }
+
+
 def main() -> None:
     reference, current = ensure_data()
 
     report_result = run_drift_report(reference, current)
     retrain_decision = decide_retrain(reference, current)
 
+    latest_metrics = build_latest_metrics(
+        reference=reference,
+        current=current,
+        retrain_decision=retrain_decision,
+    )
+
     final_result = {
         **report_result,
         **retrain_decision,
+        "latest_metrics": latest_metrics,
+        "latest_metrics_path": str(LATEST_METRICS_PATH),
     }
 
     with JSON_RESULT_PATH.open("w", encoding="utf-8") as f:
         json.dump(final_result, f, ensure_ascii=False, indent=2)
 
+    with LATEST_METRICS_PATH.open("w", encoding="utf-8") as f:
+        json.dump(latest_metrics, f, ensure_ascii=False, indent=2)
+
+    print(f"Full drift result saved at: {JSON_RESULT_PATH}")
+    print(f"Latest drift metrics saved at: {LATEST_METRICS_PATH}")
     print(json.dumps(final_result, ensure_ascii=False, indent=2))
 
 

@@ -87,7 +87,11 @@ spec:
               mountPath: /app/data/predictions
 
             - name: drift-monitoring
+              configMap:
+                name: drift-metrics-config
               mountPath: /app/data/monitoring
+              readOnly: true
+              
 
       volumes:
         - name: prediction-logs
@@ -95,7 +99,8 @@ spec:
             claimName: prediction-logs-pvc
 
         - name: drift-monitoring
-          emptyDir: {}
+          configMap:
+            name: drift-metrics-config
 
 ---
 apiVersion: v1

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: drift-metrics-config
+  namespace: mlops-demo
+data:
+  latest_drift_metrics.json: |
+    {
+      "data_drift_score": 0.0,
+      "prediction_drift_score": 0.0,
+      "drift_detected": false,
+      "drifted_features_count": 0,
+      "drifted_features_ratio": 0.0,
+      "total_features_count": 9,
+      "max_feature_drift_score": 0.0,
+      "mean_feature_drift_score": 0.0,
+      "current_dataset_rows": 0,
+      "reference_dataset_rows": 0,
+      "retrain_required": false
+    }
