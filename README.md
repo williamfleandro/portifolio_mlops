@@ -1,8 +1,21 @@
-# Portifólio MLOps — MLflow, FastAPI, Kubernetes, Argo CD, Prometheus, Grafana e Evidently AI
+# 🧠 MLOps Apartment Price Prediction - Portifólio MLOps — MLflow, FastAPI, Kubernetes, Argo CD, Prometheus, Grafana e Evidently AI
 
 Projeto de MLOps completo para previsão de preço de apartamentos, com versionamento de modelo no MLflow, armazenamento de artefatos no MinIO, serving via FastAPI, frontend React, deploy em Kubernetes, GitOps com Argo CD, rollout canário com Argo Rollouts, observabilidade com Prometheus/Grafana, detecção de drift com Evidently AI e retreinamento orientado por métricas.
 
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-green)
+![React](https://img.shields.io/badge/React-Frontend-blue)
+![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
+![MLflow](https://img.shields.io/badge/MLflow-Model%20Registry-orange)
+![MinIO](https://img.shields.io/badge/MinIO-S3%20Storage-red)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-k3d-blue)
+![ArgoCD](https://img.shields.io/badge/ArgoCD-gray)
+![drift](https://img.shields.io/badge/drift-orage)
+![MLOps](https://img.shields.io/badge/MLOps-End--to--End-success)
+
+
 ---
+
 
 ## 1. Objetivo do projeto
 
