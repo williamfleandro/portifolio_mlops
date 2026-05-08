@@ -51,18 +51,26 @@ mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 # Mantém compatibilidade com o frontend antigo, que ainda envia city.
 CAPITAL_BASE_PRICE_M2 = {
     "Maceió": 9908.0,
+    "Maceio": 9908.0,
     "Manaus": 7513.0,
     "Salvador": 8385.0,
     "Fortaleza": 9350.0,
     "Brasília": 10090.0,
+    "Brasilia": 10090.0,
     "Vitória": 14818.0,
+    "Vitoria": 14818.0,
     "Goiânia": 8226.0,
+    "Goiania": 8226.0,
     "São Luís": 8627.0,
+    "Sao Luis": 8627.0,
     "Cuiabá": 6931.0,
+    "Cuiaba": 6931.0,
     "Campo Grande": 6839.0,
     "Belo Horizonte": 10663.0,
     "Belém": 8882.0,
+    "Belem": 8882.0,
     "João Pessoa": 8081.0,
+    "Joao Pessoa": 8081.0,
     "Curitiba": 11694.0,
     "Recife": 8615.0,
     "Teresina": 5857.0,
@@ -70,10 +78,13 @@ CAPITAL_BASE_PRICE_M2 = {
     "Natal": 6334.0,
     "Porto Alegre": 7579.0,
     "Florianópolis": 13208.0,
+    "Florianopolis": 13208.0,
     "São Paulo": 12019.0,
+    "Sao Paulo": 12019.0,
     "Aracaju": 5529.0,
     "Rio Branco": 5200.0,
     "Macapá": 5400.0,
+    "Macapa": 5400.0,
     "Porto Velho": 5600.0,
     "Boa Vista": 5300.0,
     "Palmas": 5900.0,
@@ -104,6 +115,19 @@ POTENTIAL_INPUT_COLUMNS = [
 ]
 
 NUMERIC_REQUIRED_COLUMNS = [
+    "area_m2",
+    "bedrooms",
+    "bathrooms",
+    "floor",
+    "parking_spaces",
+    "neighborhood_score",
+    "condo_fee",
+    "age_years",
+    "distance_to_center_km",
+]
+
+MODEL_NUMERIC_COLUMNS = [
+    "base_price_m2",
     "area_m2",
     "bedrooms",
     "bathrooms",
@@ -181,14 +205,14 @@ class ApartmentFeatures(BaseModel):
     price_source: Optional[str] = Field(default=None)
 
     # Campos numéricos principais.
-    area_m2: int
-    bedrooms: int
-    bathrooms: int
-    floor: int
-    parking_spaces: int
+    area_m2: float
+    bedrooms: float
+    bathrooms: float
+    floor: float
+    parking_spaces: float
     neighborhood_score: float
     condo_fee: float
-    age_years: int
+    age_years: float
     distance_to_center_km: float
 
 
@@ -436,27 +460,8 @@ def normalize_features(df: pd.DataFrame) -> pd.DataFrame:
 
         normalized[column] = normalized[column].fillna(default_value).astype(str)
 
-    integer_columns = [
-        "area_m2",
-        "bedrooms",
-        "bathrooms",
-        "floor",
-        "parking_spaces",
-        "age_years",
-    ]
-
-    float_columns = [
-        "base_price_m2",
-        "neighborhood_score",
-        "condo_fee",
-        "distance_to_center_km",
-    ]
-
-    for column in integer_columns:
-        normalized[column] = normalized[column].astype("int64")
-
-    for column in float_columns:
-        normalized[column] = normalized[column].astype("float64")
+    for column in MODEL_NUMERIC_COLUMNS:
+        normalized[column] = pd.to_numeric(normalized[column], errors="raise").astype("float64")
 
     ordered_columns = [
         column for column in POTENTIAL_INPUT_COLUMNS if column in normalized.columns
@@ -770,7 +775,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Apartment Price API",
-    version="1.2.0",
+    version="1.2.1",
     lifespan=lifespan,
 )
 
@@ -801,6 +806,7 @@ def schema() -> dict[str, Any]:
         "model_input_columns": info.get("input_columns") or [],
         "accepted_payload_fields": POTENTIAL_INPUT_COLUMNS,
         "required_numeric_fields": NUMERIC_REQUIRED_COLUMNS,
+        "model_numeric_fields": MODEL_NUMERIC_COLUMNS,
         "defaults": {
             "property_type": DEFAULT_PROPERTY_TYPE,
             "neighborhood": DEFAULT_NEIGHBORHOOD,
