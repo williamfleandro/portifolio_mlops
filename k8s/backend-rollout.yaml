@@ -42,7 +42,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: apartment-price-backend:1.2
+          image: apartment-price-backend:1.3
           imagePullPolicy: Never
 
           ports:
@@ -54,6 +54,9 @@ spec:
                 configMapKeyRef:
                   name: mlflow-config
                   key: MLFLOW_TRACKING_URI
+
+            - name: DEFAULT_MODEL_URI
+              value: "models:/apartment-price-regression@candidate"
 
             - name: MLFLOW_S3_ENDPOINT_URL
               valueFrom:

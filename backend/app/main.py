@@ -20,6 +20,10 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 
+# ========================
+# CONFIG
+# ========================
+
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
 DEFAULT_MODEL_URI = os.getenv(
     "DEFAULT_MODEL_URI",
@@ -38,6 +42,83 @@ LOG_PREDICTIONS = os.getenv("LOG_PREDICTIONS", "true").lower() in {"1", "true", 
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
+
+# ========================
+# MARKET DEFAULTS
+# ========================
+
+# Usado apenas quando o payload não envia base_price_m2.
+# Mantém compatibilidade com o frontend antigo, que ainda envia city.
+CAPITAL_BASE_PRICE_M2 = {
+    "Maceió": 9908.0,
+    "Manaus": 7513.0,
+    "Salvador": 8385.0,
+    "Fortaleza": 9350.0,
+    "Brasília": 10090.0,
+    "Vitória": 14818.0,
+    "Goiânia": 8226.0,
+    "São Luís": 8627.0,
+    "Cuiabá": 6931.0,
+    "Campo Grande": 6839.0,
+    "Belo Horizonte": 10663.0,
+    "Belém": 8882.0,
+    "João Pessoa": 8081.0,
+    "Curitiba": 11694.0,
+    "Recife": 8615.0,
+    "Teresina": 5857.0,
+    "Rio de Janeiro": 10939.0,
+    "Natal": 6334.0,
+    "Porto Alegre": 7579.0,
+    "Florianópolis": 13208.0,
+    "São Paulo": 12019.0,
+    "Aracaju": 5529.0,
+    "Rio Branco": 5200.0,
+    "Macapá": 5400.0,
+    "Porto Velho": 5600.0,
+    "Boa Vista": 5300.0,
+    "Palmas": 5900.0,
+}
+
+DEFAULT_CITY = "São Paulo"
+DEFAULT_PROPERTY_TYPE = "apartment"
+DEFAULT_NEIGHBORHOOD = "Região Residencial"
+DEFAULT_BASE_PRICE_M2 = 9769.0
+
+POTENTIAL_INPUT_COLUMNS = [
+    "property_type",
+    "neighborhood",
+    "base_price_m2",
+    "city",
+    "state",
+    "region",
+    "price_source",
+    "area_m2",
+    "bedrooms",
+    "bathrooms",
+    "floor",
+    "parking_spaces",
+    "neighborhood_score",
+    "condo_fee",
+    "age_years",
+    "distance_to_center_km",
+]
+
+NUMERIC_REQUIRED_COLUMNS = [
+    "area_m2",
+    "bedrooms",
+    "bathrooms",
+    "floor",
+    "parking_spaces",
+    "neighborhood_score",
+    "condo_fee",
+    "age_years",
+    "distance_to_center_km",
+]
+
+
+# ========================
+# PROMETHEUS METRICS
+# ========================
 
 MODEL_PREDICTION_TOTAL = Counter(
     "model_prediction_total",
@@ -82,8 +163,24 @@ MODEL_DRIFT_DETECTED = Gauge(
 )
 
 
+# ========================
+# API SCHEMAS
+# ========================
+
 class ApartmentFeatures(BaseModel):
-    city: str
+    # Novo schema do modelo candidate v9.
+    property_type: str = Field(default=DEFAULT_PROPERTY_TYPE)
+    neighborhood: str = Field(default=DEFAULT_NEIGHBORHOOD)
+    base_price_m2: Optional[float] = Field(default=None)
+
+    # Campos de auditoria e compatibilidade.
+    # city também permite derivar base_price_m2 quando o frontend ainda não envia essa feature.
+    city: Optional[str] = Field(default=DEFAULT_CITY)
+    state: Optional[str] = Field(default=None)
+    region: Optional[str] = Field(default=None)
+    price_source: Optional[str] = Field(default=None)
+
+    # Campos numéricos principais.
     area_m2: int
     bedrooms: int
     bathrooms: int
@@ -121,6 +218,7 @@ class ModelLoadResponse(BaseModel):
     model_version: Optional[str]
     model_alias: Optional[str] = None
     model_source: Optional[str] = None
+    input_columns: list[str] = Field(default_factory=list)
 
 
 class ModelReloadResponse(BaseModel):
@@ -130,6 +228,7 @@ class ModelReloadResponse(BaseModel):
     model_version: Optional[str]
     model_alias: Optional[str] = None
     model_source: Optional[str] = None
+    input_columns: list[str] = Field(default_factory=list)
 
 
 class DriftRefreshResponse(BaseModel):
@@ -139,6 +238,10 @@ class DriftRefreshResponse(BaseModel):
     prediction_drift_score: Optional[float] = None
     drift_detected: Optional[bool] = None
 
+
+# ========================
+# UTILS
+# ========================
 
 def resolve_model_registry_info(model_uri: str) -> dict[str, Optional[str]]:
     client = MlflowClient()
@@ -183,21 +286,33 @@ def resolve_model_registry_info(model_uri: str) -> dict[str, Optional[str]]:
     return info
 
 
-def normalize_features(df: pd.DataFrame) -> pd.DataFrame:
-    return df.astype(
-        {
-            "city": "string",
-            "area_m2": "int64",
-            "bedrooms": "int64",
-            "bathrooms": "int64",
-            "floor": "int64",
-            "parking_spaces": "int64",
-            "neighborhood_score": "float64",
-            "condo_fee": "float64",
-            "age_years": "int64",
-            "distance_to_center_km": "float64",
-        }
-    )
+def get_model_input_columns(model: Any) -> list[str]:
+    """
+    Lê o schema de entrada salvo pelo MLflow.
+
+    Isso permite que o backend seja compatível com:
+    - modelos antigos, que esperam city;
+    - modelos novos, que esperam property_type, neighborhood e base_price_m2.
+    """
+    try:
+        schema = model.metadata.get_input_schema()
+
+        if schema is None:
+            return []
+
+        columns = []
+
+        for item in schema.inputs:
+            name = getattr(item, "name", None)
+
+            if name:
+                columns.append(str(name))
+
+        return columns
+
+    except Exception as exc:
+        print(f"[model-schema-warning] Não foi possível ler input schema: {exc}")
+        return []
 
 
 def model_to_dict(item: BaseModel) -> dict[str, Any]:
@@ -248,6 +363,111 @@ def drift_metric_labels(info: dict[str, Optional[str]]) -> dict[str, str]:
         "model_alias": safe_label(info.get("model_alias")),
     }
 
+
+# ========================
+# FEATURE NORMALIZATION
+# ========================
+
+def normalize_property_type(value: Any) -> str:
+    if value is None:
+        return DEFAULT_PROPERTY_TYPE
+
+    normalized = str(value).strip().lower()
+
+    if normalized in {"house", "casa"}:
+        return "house"
+
+    if normalized in {"apartment", "apartamento", "apt", "apto"}:
+        return "apartment"
+
+    return DEFAULT_PROPERTY_TYPE
+
+
+def infer_base_price_m2(row: pd.Series) -> float:
+    value = row.get("base_price_m2")
+
+    if pd.notna(value):
+        return float(value)
+
+    city = row.get("city") or DEFAULT_CITY
+    return float(CAPITAL_BASE_PRICE_M2.get(str(city), DEFAULT_BASE_PRICE_M2))
+
+
+def normalize_features(df: pd.DataFrame) -> pd.DataFrame:
+    normalized = df.copy()
+
+    for column in NUMERIC_REQUIRED_COLUMNS:
+        if column not in normalized.columns:
+            raise ValueError(f"Campo obrigatório ausente no payload: {column}")
+
+    if "city" not in normalized.columns:
+        normalized["city"] = DEFAULT_CITY
+
+    normalized["city"] = normalized["city"].fillna(DEFAULT_CITY).astype(str)
+
+    if "property_type" not in normalized.columns:
+        normalized["property_type"] = DEFAULT_PROPERTY_TYPE
+
+    normalized["property_type"] = normalized["property_type"].apply(normalize_property_type)
+
+    if "neighborhood" not in normalized.columns:
+        normalized["neighborhood"] = DEFAULT_NEIGHBORHOOD
+
+    normalized["neighborhood"] = (
+        normalized["neighborhood"]
+        .fillna(DEFAULT_NEIGHBORHOOD)
+        .astype(str)
+    )
+
+    if "base_price_m2" not in normalized.columns:
+        normalized["base_price_m2"] = None
+
+    normalized["base_price_m2"] = normalized.apply(infer_base_price_m2, axis=1)
+
+    optional_string_defaults = {
+        "state": "unknown",
+        "region": "unknown",
+        "price_source": "runtime_default",
+    }
+
+    for column, default_value in optional_string_defaults.items():
+        if column not in normalized.columns:
+            normalized[column] = default_value
+
+        normalized[column] = normalized[column].fillna(default_value).astype(str)
+
+    integer_columns = [
+        "area_m2",
+        "bedrooms",
+        "bathrooms",
+        "floor",
+        "parking_spaces",
+        "age_years",
+    ]
+
+    float_columns = [
+        "base_price_m2",
+        "neighborhood_score",
+        "condo_fee",
+        "distance_to_center_km",
+    ]
+
+    for column in integer_columns:
+        normalized[column] = normalized[column].astype("int64")
+
+    for column in float_columns:
+        normalized[column] = normalized[column].astype("float64")
+
+    ordered_columns = [
+        column for column in POTENTIAL_INPUT_COLUMNS if column in normalized.columns
+    ]
+
+    return normalized[ordered_columns]
+
+
+# ========================
+# LOGGING
+# ========================
 
 def append_prediction_logs(
     endpoint: str,
@@ -334,6 +554,10 @@ def append_prediction_logs(
         print(f"[prediction-logging-warning] Falha ao gravar log de predicao: {log_error}")
 
 
+# ========================
+# MODEL STORE
+# ========================
+
 class ModelStore:
     def __init__(self) -> None:
         self._lock = RLock()
@@ -343,6 +567,7 @@ class ModelStore:
         self.model_version: Optional[str] = None
         self.model_alias: Optional[str] = None
         self.model_source: Optional[str] = None
+        self.input_columns: list[str] = []
 
     def load(
         self,
@@ -352,6 +577,7 @@ class ModelStore:
     ) -> None:
         loaded = mlflow.pyfunc.load_model(model_uri)
         registry_info = resolve_model_registry_info(model_uri)
+        input_columns = get_model_input_columns(loaded)
 
         with self._lock:
             self.model = loaded
@@ -360,12 +586,36 @@ class ModelStore:
             self.model_version = registry_info.get("model_version") or model_version
             self.model_alias = registry_info.get("model_alias")
             self.model_source = registry_info.get("model_source")
+            self.input_columns = input_columns
+
+        print(
+            "[model-loaded] "
+            f"uri={model_uri} version={self.model_version} "
+            f"alias={self.model_alias} input_columns={input_columns}"
+        )
 
     def predict(self, df: pd.DataFrame) -> list[float]:
         with self._lock:
             if self.model is None:
                 raise RuntimeError("Nenhum modelo foi carregado.")
-            preds = self.model.predict(df)
+
+            input_columns = list(self.input_columns)
+            model = self.model
+
+        if input_columns:
+            missing_columns = [column for column in input_columns if column not in df.columns]
+
+            if missing_columns:
+                raise ValueError(
+                    "Payload não contém as colunas exigidas pelo modelo carregado: "
+                    f"{missing_columns}. Colunas disponíveis: {list(df.columns)}"
+                )
+
+            df_to_predict = df[input_columns].copy()
+        else:
+            df_to_predict = df.copy()
+
+        preds = model.predict(df_to_predict)
 
         if hasattr(preds, "tolist"):
             return [float(x) for x in preds.tolist()]
@@ -380,11 +630,16 @@ class ModelStore:
                 "model_version": self.model_version,
                 "model_alias": self.model_alias,
                 "model_source": self.model_source,
+                "input_columns": self.input_columns,
             }
 
 
 store = ModelStore()
 
+
+# ========================
+# PREDICTION FLOW
+# ========================
 
 def predict_with_observability(
     request: PredictRequest,
@@ -455,6 +710,10 @@ def predict_with_observability(
         raise
 
 
+# ========================
+# DRIFT
+# ========================
+
 def refresh_drift_metrics() -> DriftRefreshResponse:
     info = store.info()
 
@@ -493,6 +752,10 @@ def refresh_drift_metrics() -> DriftRefreshResponse:
     )
 
 
+# ========================
+# FASTAPI
+# ========================
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.load(DEFAULT_MODEL_URI, model_name="apartment-price-regression")
@@ -507,7 +770,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Apartment Price API",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -520,12 +783,32 @@ def health() -> dict[str, str]:
 
 
 @app.get("/model")
-def current_model() -> dict[str, Optional[str]]:
+def current_model() -> dict[str, Any]:
     info = store.info()
     return {
         "status": "loaded" if info["model_uri"] else "not_loaded",
         **info,
         "tracking_uri": mlflow.get_tracking_uri(),
+    }
+
+
+@app.get("/schema")
+def schema() -> dict[str, Any]:
+    info = store.info()
+
+    return {
+        "status": "ok",
+        "model_input_columns": info.get("input_columns") or [],
+        "accepted_payload_fields": POTENTIAL_INPUT_COLUMNS,
+        "required_numeric_fields": NUMERIC_REQUIRED_COLUMNS,
+        "defaults": {
+            "property_type": DEFAULT_PROPERTY_TYPE,
+            "neighborhood": DEFAULT_NEIGHBORHOOD,
+            "city": DEFAULT_CITY,
+            "base_price_m2": "derived from city when omitted",
+            "fallback_base_price_m2": DEFAULT_BASE_PRICE_M2,
+        },
+        "city_base_price_m2_count": len(CAPITAL_BASE_PRICE_M2),
     }
 
 
@@ -547,6 +830,7 @@ def load_model(request: ModelLoadRequest) -> ModelLoadResponse:
             model_version=info["model_version"],
             model_alias=info["model_alias"],
             model_source=info["model_source"],
+            input_columns=info.get("input_columns") or [],
         )
 
     except Exception as e:
@@ -574,6 +858,7 @@ def reload_model() -> ModelReloadResponse:
             model_version=info["model_version"],
             model_alias=info["model_alias"],
             model_source=info["model_source"],
+            input_columns=info.get("input_columns") or [],
         )
 
     except Exception as e:
