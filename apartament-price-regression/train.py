@@ -19,7 +19,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
     ExtraTreesRegressor,
     GradientBoostingRegressor,
-    HistGradientBoostingRegressor,
     RandomForestRegressor,
 )
 from sklearn.exceptions import ConvergenceWarning
@@ -338,19 +337,7 @@ def get_model_candidates() -> list[ModelCandidate]:
             },
             family="boosting_tree",
             explainability="medium",
-        ),
-        ModelCandidate(
-            name="HistGradientBoostingRegressor",
-            estimator=HistGradientBoostingRegressor(random_state=RANDOM_STATE),
-            param_grid={
-                "model__max_iter": [250],
-                "model__learning_rate": [0.05, 0.08],
-                "model__max_leaf_nodes": [31],
-                "model__l2_regularization": [0.0, 0.1],
-            },
-            family="modern_boosting_tree",
-            explainability="medium",
-        ),
+        )
     ]
 
 
