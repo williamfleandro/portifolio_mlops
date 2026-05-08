@@ -11,7 +11,7 @@ from threading import RLock
 from typing import Any, Optional
 
 import mlflow
-import mlflow.pyfunc
+import mlflow.sklearn
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from mlflow.tracking import MlflowClient
@@ -103,6 +103,24 @@ POTENTIAL_INPUT_COLUMNS = [
     "state",
     "region",
     "price_source",
+    "area_m2",
+    "bedrooms",
+    "bathrooms",
+    "floor",
+    "parking_spaces",
+    "neighborhood_score",
+    "condo_fee",
+    "age_years",
+    "distance_to_center_km",
+]
+
+# Schema efetivo usado pelo modelo candidate v9.
+# Ao carregar com mlflow.sklearn.load_model(), não dependemos mais da camada PyFunc
+# para obter o schema de entrada.
+MODEL_INPUT_COLUMNS = [
+    "property_type",
+    "neighborhood",
+    "base_price_m2",
     "area_m2",
     "bedrooms",
     "bathrooms",
@@ -312,31 +330,20 @@ def resolve_model_registry_info(model_uri: str) -> dict[str, Optional[str]]:
 
 def get_model_input_columns(model: Any) -> list[str]:
     """
-    Lê o schema de entrada salvo pelo MLflow.
+    Com mlflow.sklearn.load_model(), o objeto retornado é o Pipeline sklearn.
+    Ele geralmente não expõe model.metadata como o PyFunc.
 
-    Isso permite que o backend seja compatível com:
-    - modelos antigos, que esperam city;
-    - modelos novos, que esperam property_type, neighborhood e base_price_m2.
+    Estratégia:
+    1. tentar feature_names_in_ quando disponível;
+    2. cair para o schema conhecido do modelo candidate v9.
     """
     try:
-        schema = model.metadata.get_input_schema()
-
-        if schema is None:
-            return []
-
-        columns = []
-
-        for item in schema.inputs:
-            name = getattr(item, "name", None)
-
-            if name:
-                columns.append(str(name))
-
-        return columns
-
+        if hasattr(model, "feature_names_in_"):
+            return [str(col) for col in list(model.feature_names_in_)]
     except Exception as exc:
-        print(f"[model-schema-warning] Não foi possível ler input schema: {exc}")
-        return []
+        print(f"[model-schema-warning] Falha ao obter feature_names_in_: {exc}", flush=True)
+
+    return list(MODEL_INPUT_COLUMNS)
 
 
 def model_to_dict(item: BaseModel) -> dict[str, Any]:
@@ -388,6 +395,10 @@ def drift_metric_labels(info: dict[str, Optional[str]]) -> dict[str, str]:
     }
 
 
+def debug_print(message: str) -> None:
+    print(message, flush=True)
+
+
 # ========================
 # FEATURE NORMALIZATION
 # ========================
@@ -401,10 +412,27 @@ def normalize_property_type(value: Any) -> str:
     if normalized in {"house", "casa"}:
         return "house"
 
-    if normalized in {"apartment", "apartamento", "apt", "apto"}:
+    if normalized in {"apartment", "apartamento", "apartament", "apt", "apto"}:
         return "apartment"
 
     return DEFAULT_PROPERTY_TYPE
+
+
+def normalize_neighborhood(value: Any) -> str:
+    if value is None:
+        return DEFAULT_NEIGHBORHOOD
+
+    normalized = str(value).strip()
+
+    aliases = {
+        "Area Nobre": "Área Nobre",
+        "Area Universitaria": "Área Universitária",
+        "Regiao Residencial": "Região Residencial",
+        "Regiao Comercial": "Região Comercial",
+        "Regiao Periferica": "Região Periférica",
+    }
+
+    return aliases.get(normalized, normalized)
 
 
 def infer_base_price_m2(row: pd.Series) -> float:
@@ -440,6 +468,7 @@ def normalize_features(df: pd.DataFrame) -> pd.DataFrame:
     normalized["neighborhood"] = (
         normalized["neighborhood"]
         .fillna(DEFAULT_NEIGHBORHOOD)
+        .apply(normalize_neighborhood)
         .astype(str)
     )
 
@@ -573,6 +602,7 @@ class ModelStore:
         self.model_alias: Optional[str] = None
         self.model_source: Optional[str] = None
         self.input_columns: list[str] = []
+        self.model_flavor: str = "sklearn"
 
     def load(
         self,
@@ -580,7 +610,11 @@ class ModelStore:
         model_name: Optional[str] = None,
         model_version: Optional[str] = None,
     ) -> None:
-        loaded = mlflow.pyfunc.load_model(model_uri)
+        started_at = time.perf_counter()
+        debug_print(f"[model-load] loading sklearn model from {model_uri}")
+
+        loaded = mlflow.sklearn.load_model(model_uri)
+
         registry_info = resolve_model_registry_info(model_uri)
         input_columns = get_model_input_columns(loaded)
 
@@ -592,11 +626,15 @@ class ModelStore:
             self.model_alias = registry_info.get("model_alias")
             self.model_source = registry_info.get("model_source")
             self.input_columns = input_columns
+            self.model_flavor = "sklearn"
 
-        print(
+        elapsed = time.perf_counter() - started_at
+
+        debug_print(
             "[model-loaded] "
             f"uri={model_uri} version={self.model_version} "
-            f"alias={self.model_alias} input_columns={input_columns}"
+            f"alias={self.model_alias} flavor=sklearn "
+            f"input_columns={input_columns} elapsed={elapsed:.4f}s"
         )
 
     def predict(self, df: pd.DataFrame) -> list[float]:
@@ -620,7 +658,16 @@ class ModelStore:
         else:
             df_to_predict = df.copy()
 
+        debug_print("[predict-debug] dataframe sent to sklearn model:")
+        debug_print(df_to_predict.head(1).to_string())
+        debug_print("[predict-debug] dtypes:")
+        debug_print(df_to_predict.dtypes.to_string())
+
+        started_at = time.perf_counter()
         preds = model.predict(df_to_predict)
+        elapsed = time.perf_counter() - started_at
+
+        debug_print(f"[predict-debug] sklearn model.predict finished in {elapsed:.4f}s")
 
         if hasattr(preds, "tolist"):
             return [float(x) for x in preds.tolist()]
@@ -636,6 +683,7 @@ class ModelStore:
                 "model_alias": self.model_alias,
                 "model_source": self.model_source,
                 "input_columns": self.input_columns,
+                "model_flavor": self.model_flavor,
             }
 
 
@@ -654,11 +702,22 @@ def predict_with_observability(
     input_records: list[dict[str, Any]] = []
 
     try:
-        input_records = [model_to_dict(item) for item in request.dataframe_records]
-        df = pd.DataFrame(input_records)
-        df = normalize_features(df)
+        debug_print(f"[predict-debug] request received endpoint={endpoint}")
 
+        input_records = [model_to_dict(item) for item in request.dataframe_records]
+        debug_print(f"[predict-debug] input_records={json.dumps(input_records, ensure_ascii=False, default=str)}")
+
+        df = pd.DataFrame(input_records)
+        debug_print("[predict-debug] dataframe created")
+
+        df = normalize_features(df)
+        debug_print("[predict-debug] features normalized")
+        debug_print(df.dtypes.to_string())
+
+        debug_print("[predict-debug] calling store.predict")
         preds = store.predict(df)
+        debug_print("[predict-debug] store.predict finished")
+
         latency_seconds = time.perf_counter() - start_time
         info = store.info()
 
@@ -679,6 +738,7 @@ def predict_with_observability(
                 **latency_metric_labels(info=info, endpoint=endpoint)
             ).set(preds[-1])
 
+        debug_print("[predict-debug] appending prediction logs")
         append_prediction_logs(
             endpoint=endpoint,
             info=info,
@@ -687,6 +747,7 @@ def predict_with_observability(
             latency_seconds=latency_seconds,
             status="success",
         )
+        debug_print("[predict-debug] prediction logs finished")
 
         return preds, info
 
@@ -712,6 +773,7 @@ def predict_with_observability(
             error_message=str(e),
         )
 
+        debug_print(f"[predict-error] {e}")
         raise
 
 
@@ -775,7 +837,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Apartment Price API",
-    version="1.2.1",
+    version="1.3.0",
     lifespan=lifespan,
 )
 
@@ -807,6 +869,7 @@ def schema() -> dict[str, Any]:
         "accepted_payload_fields": POTENTIAL_INPUT_COLUMNS,
         "required_numeric_fields": NUMERIC_REQUIRED_COLUMNS,
         "model_numeric_fields": MODEL_NUMERIC_COLUMNS,
+        "model_flavor": info.get("model_flavor"),
         "defaults": {
             "property_type": DEFAULT_PROPERTY_TYPE,
             "neighborhood": DEFAULT_NEIGHBORHOOD,
