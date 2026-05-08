@@ -1,33 +1,166 @@
 {
-  "run_id": "f37d35282f0f46269b878f579589ef5f",
+  "run_id": "7e32a83eb643468eb4bc9de519ddb3a8",
   "experiment_name": "apartment-price-regression-minio",
-  "tracking_uri": "http://127.0.0.1:5001",
-  "metrics": {
-    "validation": {
-      "mae": 232542.50621083967,
-      "rmse": 299885.59093831194,
-      "r2": 0.8047768087441184,
-      "mape": 18.753527857480858
+  "tracking_uri": "http://127.0.0.1:5000",
+  "selection": {
+    "strategy": "GridSearchCV",
+    "primary_metric": "rmse",
+    "primary_metric_goal": "minimize",
+    "cv_folds": 3,
+    "candidate_count": 6,
+    "successful_candidates": 6
+  },
+  "features": {
+    "categorical_features": [
+      "property_type",
+      "neighborhood"
+    ],
+    "numerical_features": [
+      "base_price_m2",
+      "area_m2",
+      "bedrooms",
+      "bathrooms",
+      "floor",
+      "parking_spaces",
+      "neighborhood_score",
+      "condo_fee",
+      "age_years",
+      "distance_to_center_km"
+    ],
+    "derived_numerical_features": [
+      "area_per_bedroom",
+      "condo_fee_per_m2",
+      "bathrooms_per_bedroom",
+      "parking_per_bedroom",
+      "is_high_floor",
+      "is_new_property",
+      "is_old_property",
+      "premium_location",
+      "estimated_market_value"
+    ],
+    "audit_features_excluded_from_training": [
+      "state",
+      "region",
+      "city",
+      "price_source"
+    ],
+    "multicollinearity_policy": "state, region, city and price_source are kept outside training; base_price_m2 represents the external market reference."
+  },
+  "best_model": {
+    "name": "HistGradientBoostingRegressor",
+    "family": "modern_boosting_tree",
+    "explainability": "medium",
+    "best_params": {
+      "model__l2_regularization": 0.0,
+      "model__learning_rate": 0.05,
+      "model__max_iter": 250,
+      "model__max_leaf_nodes": 31
     },
-    "test": {
-      "mae": 237149.79764049491,
-      "rmse": 309192.828417962,
-      "r2": 0.7961093242924078,
-      "mape": 19.187157921739946
+    "validation_metrics": {
+      "mae": 57756.17858489191,
+      "rmse": 80502.73257394067,
+      "r2": 0.9869699293345588,
+      "mape": 4.595654418110627
+    },
+    "test_metrics": {
+      "mae": 59845.36501053039,
+      "rmse": 84955.3680311963,
+      "r2": 0.9859984023060456,
+      "mape": 4.558263729071673
     }
   },
-  "model_uri": "models:/m-faa4083fa31f4555ac492c41c936c3f8",
+  "ranking": [
+    {
+      "model_name": "HistGradientBoostingRegressor",
+      "family": "modern_boosting_tree",
+      "explainability": "medium",
+      "validation_mae": 57756.17858489191,
+      "validation_rmse": 80502.73257394067,
+      "validation_r2": 0.9869699293345588,
+      "validation_mape": 4.595654418110627,
+      "cv_best_rmse": 85374.79344266713,
+      "training_seconds": 73.68111140001565,
+      "best_params": "{\"model__l2_regularization\": 0.0, \"model__learning_rate\": 0.05, \"model__max_iter\": 250, \"model__max_leaf_nodes\": 31}"
+    },
+    {
+      "model_name": "GradientBoostingRegressor",
+      "family": "boosting_tree",
+      "explainability": "medium",
+      "validation_mae": 60863.671346111245,
+      "validation_rmse": 85211.03124029587,
+      "validation_r2": 0.9854011996593687,
+      "validation_mape": 4.76820845256277,
+      "cv_best_rmse": 88002.84903257387,
+      "training_seconds": 154.16316050000023,
+      "best_params": "{\"model__learning_rate\": 0.08, \"model__max_depth\": 3, \"model__n_estimators\": 250}"
+    },
+    {
+      "model_name": "ExtraTreesRegressor",
+      "family": "bagging_tree",
+      "explainability": "medium",
+      "validation_mae": 66527.5943154,
+      "validation_rmse": 90741.19679856466,
+      "validation_r2": 0.9834447961635114,
+      "validation_mape": 5.5077741034534204,
+      "cv_best_rmse": 95436.62793076462,
+      "training_seconds": 64.22418059996562,
+      "best_params": "{\"model__max_depth\": null, \"model__min_samples_leaf\": 1, \"model__n_estimators\": 300}"
+    },
+    {
+      "model_name": "RandomForestRegressor",
+      "family": "bagging_tree",
+      "explainability": "medium",
+      "validation_mae": 71316.2916505111,
+      "validation_rmse": 97041.58102884126,
+      "validation_r2": 0.9810660487914834,
+      "validation_mape": 5.992086125861713,
+      "cv_best_rmse": 103047.6012479089,
+      "training_seconds": 91.04367420001654,
+      "best_params": "{\"model__max_depth\": null, \"model__min_samples_leaf\": 1, \"model__n_estimators\": 300}"
+    },
+    {
+      "model_name": "Ridge",
+      "family": "linear_regularized",
+      "explainability": "high",
+      "validation_mae": 82407.59208043417,
+      "validation_rmse": 114042.95430671723,
+      "validation_r2": 0.9738505568492445,
+      "validation_mape": 8.389824464560537,
+      "cv_best_rmse": 117968.05135091225,
+      "training_seconds": 1.2357701000291854,
+      "best_params": "{\"model__alpha\": 0.1}"
+    },
+    {
+      "model_name": "LinearRegression",
+      "family": "linear",
+      "explainability": "high",
+      "validation_mae": 82409.66271936499,
+      "validation_rmse": 114043.19083933954,
+      "validation_r2": 0.9738504483777862,
+      "validation_mape": 8.390208030788797,
+      "cv_best_rmse": 117968.07077191444,
+      "training_seconds": 0.3545899000018835,
+      "best_params": "{}"
+    }
+  ],
+  "model_uri": "models:/m-647d6d3710f0480db23bf856ca8ae2b6",
   "registry": {
     "registered_model_name": "apartment-price-regression",
-    "model_version": "12",
-    "model_registry_uri": "models:/apartment-price-regression/12",
-    "model_alias_uri": "models:/apartment-price-regression@champion",
-    "registered_from_model_uri": "models:/m-faa4083fa31f4555ac492c41c936c3f8",
-    "run_id": "f37d35282f0f46269b878f579589ef5f"
+    "model_version": "9",
+    "model_registry_uri": "models:/apartment-price-regression/9",
+    "model_alias_uri": "models:/apartment-price-regression@candidate",
+    "registered_from_model_uri": "models:/m-647d6d3710f0480db23bf856ca8ae2b6",
+    "run_id": "7e32a83eb643468eb4bc9de519ddb3a8"
   },
   "datasets": {
-    "train": "/Users/wfleandro/mlflow-test/apartament-price-regression/data/train_apartments.csv",
-    "validation": "/Users/wfleandro/mlflow-test/apartament-price-regression/data/validation_apartments.csv",
-    "test": "/Users/wfleandro/mlflow-test/apartament-price-regression/data/test_apartments.csv"
+    "train": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\data\\train_apartments.csv",
+    "validation": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\data\\validation_apartments.csv",
+    "test": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\data\\test_apartments.csv"
+  },
+  "artifacts": {
+    "ranking": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\local_artifacts\\model_selection_ranking.csv",
+    "validation_preview": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\local_artifacts\\validation_predictions_preview.csv",
+    "test_preview": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\local_artifacts\\test_predictions_preview.csv",
+    "permutation_importance": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\apartament-price-regression\\local_artifacts\\best_model_permutation_importance.csv"
   }
 }

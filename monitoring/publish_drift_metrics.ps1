@@ -7,7 +7,7 @@ if (!(Test-Path ".\reports\latest_drift_metrics.json")) {
 }
 
 Write-Host "2. Updating Kubernetes ConfigMap..." -ForegroundColor Cyan
-kubectl create configmap drift-metrics-config `
+kubectl create configmap drift-metrics-runtime-config `
   -n mlops-demo `
   --from-file=latest_drift_metrics.json=.\reports\latest_drift_metrics.json `
   --dry-run=client -o yaml | kubectl apply -f -

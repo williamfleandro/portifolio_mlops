@@ -1,5 +1,5 @@
 {
-  "report_path": "/Users/wfleandro/mlflow-test/reports/data_drift_report.html",
+  "report_path": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\reports\\data_drift_report.html",
   "reference_rows": 2500,
   "current_rows": 800,
   "features": [
@@ -92,7 +92,7 @@
           "method": "Wasserstein distance (normed)",
           "threshold": 0.1
         },
-        "value": 0.493075371278638
+        "value": 0.49307537127863793
       },
       {
         "id": "57754c32b195592f789d6f2a07199c45",
@@ -166,5 +166,19 @@
     }
   ],
   "retrain_required": true,
-  "rule": "Retreino sugerido quando 30% ou mais das features apresentam z_shift >= 0.5."
+  "rule": "Retreino sugerido quando 30% ou mais das features apresentam z_shift >= 0.5.",
+  "latest_metrics": {
+    "data_drift_score": 0.5556,
+    "prediction_drift_score": 0.0,
+    "drift_detected": true,
+    "drifted_features_count": 5,
+    "drifted_features_ratio": 0.5556,
+    "total_features_count": 9,
+    "max_feature_drift_score": 0.7002,
+    "mean_feature_drift_score": 0.62096,
+    "current_dataset_rows": 800,
+    "reference_dataset_rows": 2500,
+    "retrain_required": true
+  },
+  "latest_metrics_path": "C:\\Users\\usuário\\Documents\\MLOps\\portifolio_mlops\\reports\\latest_drift_metrics.json"
 }
