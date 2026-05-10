@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from pathlib import Path
 
-from feast import Entity, FeatureView, Field, FileSource
+from feast import Entity, FeatureView, Field, FileSource, ValueType
 from feast.types import Float64, String
 
 
@@ -16,6 +16,7 @@ CURRENT_PREDICTIONS_PATH = (
 
 property_profile = Entity(
     name="property_profile",
+    value_type=ValueType.STRING,
     join_keys=["property_profile_id"],
     description=(
         "Perfil determinístico do imóvel criado a partir das features "

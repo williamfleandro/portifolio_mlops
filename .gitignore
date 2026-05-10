@@ -98,3 +98,18 @@ Thumbs.db
 # Notes / local scratch files
 # ========================
 notes.txt
+
+# ========================
+# Data Stare / local files
+# ========================
+# Feast / runtime datasets
+data/current/*.parquet
+data/current/*.csv
+
+# Feast local registry / online store
+data/feature_store/*.db
+data/feature_store/*.db-shm
+data/feature_store/*.db-wal
+
+# Local test payloads
+prediction_event.json
