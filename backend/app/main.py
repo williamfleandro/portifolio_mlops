@@ -19,6 +19,9 @@ from prometheus_client import Counter, Gauge, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
+from app.event_schemas import KafkaPublishResponse, PredictionEvent
+from app.kafka_producer import get_kafka_prediction_producer
+
 
 # ========================
 # CONFIG

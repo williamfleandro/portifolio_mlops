@@ -58,7 +58,6 @@ spec:
             - name: DEFAULT_MODEL_URI
               value: "models:/apartment-price-regression@candidate"
 
-
             - name: OMP_NUM_THREADS
               value: "1"
 
@@ -76,6 +75,21 @@ spec:
 
             - name: PYTHONUNBUFFERED
               value: "1"
+            
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "192.168.56.11:9092,192.168.56.12:9092,192.168.56.13:9092,192.168.56.14:9092,192.168.56.15:9092,192.168.56.16:9092,192.168.56.17:9092,192.168.56.18:9092"
+              
+            - name: KAFKA_PREDICTION_TOPIC
+              value: "apartment-price-predictions"
+
+            - name: KAFKA_SECURITY_PROTOCOL
+              value: "PLAINTEXT"
+            
+            - name: KAFKA_PRODUCER_ENABLED
+              value: "true"
+            
+            - name: KAFKA_PRODUCER_CLIENT_ID
+              value: "apartment-price-backend-producer"
 
             - name: MLFLOW_S3_ENDPOINT_URL
               valueFrom:
