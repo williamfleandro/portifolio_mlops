@@ -58,6 +58,25 @@ spec:
             - name: DEFAULT_MODEL_URI
               value: "models:/apartment-price-regression@candidate"
 
+
+            - name: OMP_NUM_THREADS
+              value: "1"
+
+            - name: OPENBLAS_NUM_THREADS
+              value: "1"
+
+            - name: MKL_NUM_THREADS
+              value: "1"
+
+            - name: NUMEXPR_NUM_THREADS
+              value: "1"
+
+            - name: VECLIB_MAXIMUM_THREADS
+              value: "1"
+
+            - name: PYTHONUNBUFFERED
+              value: "1"
+
             - name: MLFLOW_S3_ENDPOINT_URL
               valueFrom:
                 configMapKeyRef:
