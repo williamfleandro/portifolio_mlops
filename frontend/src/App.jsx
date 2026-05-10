@@ -5,6 +5,7 @@ const API = {
   model: "/model",
   schema: "/schema",
   predict: "/predict",
+  predictionEvent: "/events/prediction",
 }
 
 const cityBasePriceM2 = {
@@ -220,6 +221,10 @@ async function requestJSON(url, options = {}) {
 }
 
 function App() {
+  const [kafkaPublishResult, setKafkaPublishResult] = useState(null)
+  const [kafkaPublishError, setKafkaPublishError] = useState("")
+  const [kafkaPublishing, setKafkaPublishing] = useState(false)
+
   const [form, setForm] = useState(initialForm)
   const [prediction, setPrediction] = useState(null)
   const [error, setError] = useState("")
@@ -260,6 +265,30 @@ function App() {
     handleLoadModelInfo({ silent: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function publishPredictionEvent(kafkaEvent) {
+    setKafkaPublishing(true)
+    setKafkaPublishError("")
+    setKafkaPublishResult(null)
+
+    try {
+      const result = await requestJSON(API.predictionEvent, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify(kafkaEvent),
+      })
+
+      setKafkaPublishResult(result)
+      return result
+    } catch (err) {
+      setKafkaPublishError(err.message)
+      throw err
+    } finally {
+      setKafkaPublishing(false)
+    }
+  }
 
   async function handlePredict() {
     setLoading(true)
@@ -306,6 +335,7 @@ function App() {
 
       setLastKafkaEvent(kafkaEvent)
       setShowPredictionCard(true)
+      await publishPredictionEvent(kafkaEvent)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -527,6 +557,30 @@ function App() {
                 <div>
                   <span className="status">Kafka ready</span>
                   <h2>Payload Kafka preparado</h2>
+                  <p>
+                    <strong>Status Kafka:</strong>{" "}
+                    {kafkaPublishing
+                      ? "Publicando..."
+                      : kafkaPublishResult
+                        ? "Publicado com sucesso"
+                        : kafkaPublishError
+                          ? "Falha na publicação"
+                          : "Aguardando predição"}
+                  </p>
+
+                  {kafkaPublishResult && (
+                    <div className="details">
+                      <p><strong>Tópico:</strong> {kafkaPublishResult.topic}</p>
+                      <p><strong>Partição:</strong> {kafkaPublishResult.partition}</p>
+                      <p><strong>Offset:</strong> {kafkaPublishResult.offset}</p>
+                      <p><strong>Key:</strong> {kafkaPublishResult.key}</p>
+                      <p><strong>Event ID:</strong> {kafkaPublishResult.event_id}</p>
+                    </div>
+                  )}
+
+                  {kafkaPublishError && (
+                    <pre className="error">{kafkaPublishError}</pre>
+                  )}
                 </div>
 
                 <button className="collapse-button" onClick={() => setShowKafkaPayload((prev) => !prev)} type="button">

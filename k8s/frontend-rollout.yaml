@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: apartment-price-frontend:1.4
+          image: apartment-price-frontend:1.6
           imagePullPolicy: Never
           ports:
             - containerPort: 80
