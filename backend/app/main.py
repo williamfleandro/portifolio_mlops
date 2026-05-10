@@ -963,6 +963,25 @@ def invocations(request: PredictRequest) -> dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Falha na predição: {e}")
 
+@app.post("/events/prediction", response_model=KafkaPublishResponse)
+def publish_prediction_event(event: PredictionEvent) -> KafkaPublishResponse:
+    try:
+        if hasattr(event, "model_dump"):
+            event_payload = event.model_dump(mode="json")
+        else:
+            event_payload = event.dict()
+
+        producer = get_kafka_prediction_producer()
+        result = producer.publish_prediction_event(event_payload)
+
+        return KafkaPublishResponse(**result)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Falha ao publicar evento de predição no Kafka: {e}",
+        )
+
 
 @app.post("/drift/refresh", response_model=DriftRefreshResponse)
 def drift_refresh() -> DriftRefreshResponse:

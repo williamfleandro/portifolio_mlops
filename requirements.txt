@@ -5,3 +5,4 @@ numpy>=1.26
 matplotlib>=3.8
 joblib>=1.4
 evidently
+confluent-kafka==2.6.1
