@@ -9,3 +9,4 @@ boto3
 botocore
 prometheus-client
 prometheus-fastapi-instrumentator
+confluent-kafka==2.6.1
