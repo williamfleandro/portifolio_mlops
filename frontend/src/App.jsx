@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react"
 import "./App.css"
 
 const API = {
-  health: "/health",
   model: "/model",
   schema: "/schema",
   predict: "/predict",
@@ -59,25 +58,32 @@ const propertyTypes = [
 ]
 
 const initialForm = {
-  property_type: "apartment",
-  city: "São Paulo",
-  neighborhood: "Área Nobre",
-  base_price_m2: cityBasePriceM2["São Paulo"],
-  area_m2: 80,
-  bedrooms: 2,
-  bathrooms: 2,
-  floor: 12,
-  parking_spaces: 1,
-  neighborhood_score: 9.2,
-  condo_fee: 850,
-  age_years: 5,
-  distance_to_center_km: 4.5,
+  property_type: "house",
+  city: "Belo Horizonte",
+  neighborhood: "Região Periférica",
+  base_price_m2: cityBasePriceM2["Belo Horizonte"],
+  area_m2: 160,
+  bedrooms: 3,
+  bathrooms: 3,
+  floor: 0,
+  parking_spaces: 4,
+  neighborhood_score: 7,
+  condo_fee: 0,
+  age_years: 10,
+  distance_to_center_km: 15,
 }
 
 function formatBRL(value) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
+  }).format(Number(value || 0))
+}
+
+function formatPercent(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(Number(value || 0))
 }
 
@@ -89,7 +95,11 @@ function toNumber(value) {
   return Number(value)
 }
 
-function buildPayload(form) {
+function getPropertyTypeLabel(value) {
+  return value === "house" ? "Casa" : "Apartamento"
+}
+
+function buildModelPayload(form) {
   return {
     dataframe_records: [
       {
@@ -108,6 +118,49 @@ function buildPayload(form) {
         distance_to_center_km: toNumber(form.distance_to_center_km),
       },
     ],
+  }
+}
+
+function buildKafkaEvent({ form, modelInfo, predictionValue, baselineEstimateValue, endpoint }) {
+  const differenceValue = Number(predictionValue || 0) - Number(baselineEstimateValue || 0)
+  const differencePercent =
+    baselineEstimateValue > 0 ? (differenceValue / baselineEstimateValue) * 100 : 0
+
+  return {
+    event_type: "apartment_price_prediction",
+    event_version: "1.0",
+    event_timestamp: new Date().toISOString(),
+    source_system: "portfolio-mlops-frontend",
+    target_topic: "apartment-price-predictions",
+    endpoint,
+    model: {
+      model_name: modelInfo?.model_name ?? "apartment-price-regression",
+      model_uri: modelInfo?.model_uri ?? "models:/apartment-price-regression@candidate",
+      model_version: modelInfo?.model_version ?? null,
+      model_alias: modelInfo?.model_alias ?? "candidate",
+    },
+    prediction_tags: {
+      baseline_estimate_value: Number(baselineEstimateValue || 0),
+      ml_prediction_value: Number(predictionValue || 0),
+      prediction_difference_value: Number(differenceValue || 0),
+      prediction_difference_percent: Number(differencePercent || 0),
+    },
+    features: {
+      property_type: String(form.property_type || "apartment"),
+      property_type_label: getPropertyTypeLabel(form.property_type),
+      city: String(form.city || "São Paulo"),
+      neighborhood: String(form.neighborhood || "Região Residencial"),
+      base_price_m2: toNumber(form.base_price_m2),
+      area_m2: toNumber(form.area_m2),
+      bedrooms: toNumber(form.bedrooms),
+      bathrooms: toNumber(form.bathrooms),
+      floor: toNumber(form.floor),
+      parking_spaces: toNumber(form.parking_spaces),
+      neighborhood_score: toNumber(form.neighborhood_score),
+      condo_fee: toNumber(form.condo_fee),
+      age_years: toNumber(form.age_years),
+      distance_to_center_km: toNumber(form.distance_to_center_km),
+    },
   }
 }
 
@@ -159,11 +212,7 @@ async function requestJSON(url, options = {}) {
   }
 
   if (!response.ok) {
-    const detail =
-      typeof data === "string"
-        ? data
-        : JSON.stringify(data, null, 2)
-
+    const detail = typeof data === "string" ? data : JSON.stringify(data, null, 2)
     throw new Error(`HTTP ${response.status} em ${url}\n${detail}`)
   }
 
@@ -175,15 +224,37 @@ function App() {
   const [prediction, setPrediction] = useState(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+
   const [modelInfo, setModelInfo] = useState(null)
   const [schemaInfo, setSchemaInfo] = useState(null)
   const [modelLoading, setModelLoading] = useState(false)
-  const [showModelInfo, setShowModelInfo] = useState(true)
-  const [lastPayload, setLastPayload] = useState(null)
 
-  const estimatedMarketValue = useMemo(() => {
+  const [showModelInfo, setShowModelInfo] = useState(true)
+  const [showPredictionCard, setShowPredictionCard] = useState(true)
+  const [showKafkaPayload, setShowKafkaPayload] = useState(false)
+
+  const [lastModelPayload, setLastModelPayload] = useState(null)
+  const [lastKafkaEvent, setLastKafkaEvent] = useState(null)
+
+  const baselineEstimateValue = useMemo(() => {
     return toNumber(form.base_price_m2) * toNumber(form.area_m2)
   }, [form.base_price_m2, form.area_m2])
+
+  const predictionDifferenceValue = useMemo(() => {
+    if (prediction === null || prediction === undefined) {
+      return null
+    }
+
+    return Number(prediction) - Number(baselineEstimateValue)
+  }, [prediction, baselineEstimateValue])
+
+  const predictionDifferencePercent = useMemo(() => {
+    if (predictionDifferenceValue === null || baselineEstimateValue <= 0) {
+      return null
+    }
+
+    return (predictionDifferenceValue / baselineEstimateValue) * 100
+  }, [predictionDifferenceValue, baselineEstimateValue])
 
   useEffect(() => {
     handleLoadModelInfo({ silent: true })
@@ -196,35 +267,45 @@ function App() {
     setPrediction(null)
 
     try {
-      const payload = validatePayload(buildPayload(form))
-      setLastPayload(payload)
+      const modelPayload = validatePayload(buildModelPayload(form))
+      setLastModelPayload(modelPayload)
 
       const data = await requestJSON(API.predict, {
         method: "POST",
         headers: {
           "Content-Type": "application/json; charset=utf-8",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(modelPayload),
       })
 
-      const predictedValue = Array.isArray(data.predictions)
-        ? data.predictions[0]
-        : null
+      const predictedValue = Array.isArray(data.predictions) ? data.predictions[0] : null
 
       if (predictedValue === null || predictedValue === undefined) {
         throw new Error(`Resposta sem predictions: ${JSON.stringify(data, null, 2)}`)
       }
 
-      setPrediction(predictedValue)
-
-      setModelInfo((prev) => ({
-        ...(prev || {}),
+      const updatedModelInfo = {
+        ...(modelInfo || {}),
         status: "loaded",
-        model_uri: data.model_uri || prev?.model_uri,
-        model_name: data.model_name || prev?.model_name,
-        model_version: data.model_version || prev?.model_version,
-        model_alias: data.model_alias || prev?.model_alias,
-      }))
+        model_uri: data.model_uri || modelInfo?.model_uri,
+        model_name: data.model_name || modelInfo?.model_name,
+        model_version: data.model_version || modelInfo?.model_version,
+        model_alias: data.model_alias || modelInfo?.model_alias,
+      }
+
+      setPrediction(predictedValue)
+      setModelInfo(updatedModelInfo)
+
+      const kafkaEvent = buildKafkaEvent({
+        form,
+        modelInfo: updatedModelInfo,
+        predictionValue: predictedValue,
+        baselineEstimateValue,
+        endpoint: API.predict,
+      })
+
+      setLastKafkaEvent(kafkaEvent)
+      setShowPredictionCard(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -304,8 +385,8 @@ function App() {
           <span className="badge">MLflow + FastAPI + Docker + MinIO + Argo Rollouts</span>
           <h1>Previsão de Preço de Imóvel</h1>
           <p>
-            Interface integrada ao backend FastAPI 1.4, usando o modelo
-            <strong> candidate v9</strong> registrado no MLflow.
+            Interface integrada ao backend FastAPI, usando o modelo candidate validado
+            no MLflow Registry.
           </p>
         </div>
 
@@ -335,73 +416,23 @@ function App() {
                 onChange={(value) => updateTextField("neighborhood", value)}
               />
 
-              <Field
-                label="Preço base por m²"
-                value={form.base_price_m2}
-                onChange={(value) => updateNumericField("base_price_m2", value)}
-              />
-
-              <Field
-                label="Área (m²)"
-                value={form.area_m2}
-                onChange={(value) => updateNumericField("area_m2", value)}
-              />
-
-              <Field
-                label="Quartos"
-                value={form.bedrooms}
-                onChange={(value) => updateNumericField("bedrooms", value)}
-              />
-
-              <Field
-                label="Banheiros"
-                value={form.bathrooms}
-                onChange={(value) => updateNumericField("bathrooms", value)}
-              />
-
-              <Field
-                label="Andar"
-                value={form.floor}
-                disabled={form.property_type === "house"}
-                onChange={(value) => updateNumericField("floor", value)}
-              />
-
-              <Field
-                label="Vagas"
-                value={form.parking_spaces}
-                onChange={(value) => updateNumericField("parking_spaces", value)}
-              />
-
-              <Field
-                label="Nota do bairro"
-                value={form.neighborhood_score}
-                onChange={(value) => updateNumericField("neighborhood_score", value)}
-              />
-
-              <Field
-                label="Condomínio"
-                value={form.condo_fee}
-                onChange={(value) => updateNumericField("condo_fee", value)}
-              />
-
-              <Field
-                label="Idade do imóvel"
-                value={form.age_years}
-                onChange={(value) => updateNumericField("age_years", value)}
-              />
-
-              <Field
-                label="Distância ao centro (km)"
-                value={form.distance_to_center_km}
-                onChange={(value) => updateNumericField("distance_to_center_km", value)}
-              />
+              <Field label="Preço base por m²" value={form.base_price_m2} onChange={(value) => updateNumericField("base_price_m2", value)} />
+              <Field label="Área (m²)" value={form.area_m2} onChange={(value) => updateNumericField("area_m2", value)} />
+              <Field label="Quartos" value={form.bedrooms} onChange={(value) => updateNumericField("bedrooms", value)} />
+              <Field label="Banheiros" value={form.bathrooms} onChange={(value) => updateNumericField("bathrooms", value)} />
+              <Field label="Andar" value={form.floor} disabled={form.property_type === "house"} onChange={(value) => updateNumericField("floor", value)} />
+              <Field label="Vagas" value={form.parking_spaces} onChange={(value) => updateNumericField("parking_spaces", value)} />
+              <Field label="Nota do bairro" value={form.neighborhood_score} onChange={(value) => updateNumericField("neighborhood_score", value)} />
+              <Field label="Condomínio" value={form.condo_fee} onChange={(value) => updateNumericField("condo_fee", value)} />
+              <Field label="Idade do imóvel" value={form.age_years} onChange={(value) => updateNumericField("age_years", value)} />
+              <Field label="Distância ao centro (km)" value={form.distance_to_center_km} onChange={(value) => updateNumericField("distance_to_center_km", value)} />
             </div>
 
             <div className="details model-details">
-              <p><strong>Valor de mercado estimado:</strong> {formatBRL(estimatedMarketValue)}</p>
+              <p><strong>Estimativa base por m²:</strong> {formatBRL(baselineEstimateValue)}</p>
               <p>
-                <strong>Payload:</strong> property_type, neighborhood, base_price_m2
-                e variáveis físicas/financeiras são enviados para <strong>/predict</strong>.
+                <strong>Payload:</strong> o frontend envia as features para <strong>/predict</strong>.
+                Após a resposta, prepara um evento Kafka com <strong>baseline_estimate_value</strong> e <strong>ml_prediction_value</strong>.
               </p>
             </div>
 
@@ -420,23 +451,14 @@ function App() {
                   <h2>Modelo ativo</h2>
                 </div>
 
-                <button
-                  className="collapse-button"
-                  onClick={() => setShowModelInfo((prev) => !prev)}
-                  type="button"
-                >
+                <button className="collapse-button" onClick={() => setShowModelInfo((prev) => !prev)} type="button">
                   {showModelInfo ? "Recolher" : "Expandir"}
                 </button>
               </div>
 
               {showModelInfo && (
                 <>
-                  <button
-                    className="secondary-button"
-                    onClick={() => handleLoadModelInfo()}
-                    disabled={modelLoading}
-                    type="button"
-                  >
+                  <button className="secondary-button" onClick={() => handleLoadModelInfo()} disabled={modelLoading} type="button">
                     {modelLoading ? "Consultando modelo..." : "Atualizar modelo/schema"}
                   </button>
 
@@ -448,14 +470,8 @@ function App() {
                       <p><strong>Model version:</strong> {modelInfo.model_version ?? "N/A"}</p>
                       <p><strong>Model alias:</strong> {modelInfo.model_alias ?? "N/A"}</p>
                       <p><strong>Tracking URI:</strong> {modelInfo.tracking_uri ?? "N/A"}</p>
-                      <p>
-                        <strong>Input columns:</strong>{" "}
-                        {(modelInfo.input_columns ?? schemaInfo?.model_input_columns ?? []).join(", ") || "N/A"}
-                      </p>
-                      <p>
-                        <strong>Numeric fields:</strong>{" "}
-                        {(schemaInfo?.model_numeric_fields ?? []).join(", ") || "N/A"}
-                      </p>
+                      <p><strong>Input columns:</strong> {(modelInfo.input_columns ?? schemaInfo?.model_input_columns ?? []).join(", ") || "N/A"}</p>
+                      <p><strong>Numeric fields:</strong> {(schemaInfo?.model_numeric_fields ?? []).join(", ") || "N/A"}</p>
                     </div>
                   ) : (
                     <div className="details model-details">
@@ -467,33 +483,66 @@ function App() {
             </section>
 
             <section className="result-card">
-              <span className="status">Backend conectado</span>
-              <h2>Resultado</h2>
+              <div className="collapsible-header">
+                <div>
+                  <span className="status">Backend conectado</span>
+                  <h2>Previsão do modelo ML</h2>
+                </div>
 
-              <div className="price">
-                {prediction === null ? "Aguardando previsão" : formatBRL(prediction)}
+                <button className="collapse-button" onClick={() => setShowPredictionCard((prev) => !prev)} type="button">
+                  {showPredictionCard ? "Recolher" : "Expandir"}
+                </button>
               </div>
 
-              <div className="details">
-                <p><strong>Tipo:</strong> {form.property_type === "house" ? "Casa" : "Apartamento"}</p>
-                <p><strong>Cidade:</strong> {form.city}</p>
-                <p><strong>Bairro:</strong> {form.neighborhood}</p>
-                <p><strong>Preço base m²:</strong> {formatBRL(form.base_price_m2)}</p>
-                <p><strong>Endpoint:</strong> /predict</p>
-                <p><strong>Modelo:</strong> {modelInfo?.model_name ?? "apartment-price-regression"}</p>
-                <p><strong>Versão:</strong> {modelInfo?.model_version ?? "candidate"}</p>
-                <p><strong>URI:</strong> {modelInfo?.model_uri ?? "models:/apartment-price-regression@candidate"}</p>
-                <p><strong>Runtime:</strong> FastAPI + MLflow PyFunc</p>
-              </div>
+              {showPredictionCard && (
+                <>
+                  <div className="price">
+                    {prediction === null ? "Aguardando previsão" : formatBRL(prediction)}
+                  </div>
+
+                  <div className="details">
+                    <p><strong>Estimativa base por m²:</strong> {formatBRL(baselineEstimateValue)}</p>
+                    <p>
+                      <strong>Diferença modelo - base:</strong>{" "}
+                      {predictionDifferenceValue === null
+                        ? "N/A"
+                        : `${formatBRL(predictionDifferenceValue)} (${formatPercent(predictionDifferencePercent)}%)`}
+                    </p>
+                    <p><strong>Tipo:</strong> {getPropertyTypeLabel(form.property_type)}</p>
+                    <p><strong>Cidade:</strong> {form.city}</p>
+                    <p><strong>Bairro:</strong> {form.neighborhood}</p>
+                    <p><strong>Preço base m²:</strong> {formatBRL(form.base_price_m2)}</p>
+                    <p><strong>Endpoint:</strong> /predict</p>
+                    <p><strong>Modelo:</strong> {modelInfo?.model_name ?? "apartment-price-regression"}</p>
+                    <p><strong>Versão:</strong> {modelInfo?.model_version ?? "candidate"}</p>
+                    <p><strong>URI:</strong> {modelInfo?.model_uri ?? "models:/apartment-price-regression@candidate"}</p>
+                    <p><strong>Runtime:</strong> FastAPI + MLflow sklearn</p>
+                  </div>
+                </>
+              )}
             </section>
 
-            {lastPayload && (
-              <section className="result-card">
-                <span className="status">Debug</span>
-                <h2>Último payload enviado</h2>
-                <pre className="error">{JSON.stringify(lastPayload, null, 2)}</pre>
-              </section>
-            )}
+            <section className="result-card">
+              <div className="collapsible-header">
+                <div>
+                  <span className="status">Kafka ready</span>
+                  <h2>Payload Kafka preparado</h2>
+                </div>
+
+                <button className="collapse-button" onClick={() => setShowKafkaPayload((prev) => !prev)} type="button">
+                  {showKafkaPayload ? "Recolher" : "Expandir"}
+                </button>
+              </div>
+
+              {showKafkaPayload && (
+                <div className="details model-details">
+                  <p><strong>Status:</strong> {lastKafkaEvent ? "Evento preparado após a predição" : "Aguardando predição"}</p>
+
+                  {lastKafkaEvent && <pre className="error">{JSON.stringify(lastKafkaEvent, null, 2)}</pre>}
+                  {!lastKafkaEvent && lastModelPayload && <pre className="error">{JSON.stringify(lastModelPayload, null, 2)}</pre>}
+                </div>
+              )}
+            </section>
           </section>
         </div>
       </section>
@@ -505,13 +554,7 @@ function Field({ label, value, onChange, disabled = false }) {
   return (
     <label className="field">
       <span>{label}</span>
-      <input
-        type="number"
-        step="any"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <input type="number" step="any" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }
