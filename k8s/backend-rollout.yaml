@@ -42,7 +42,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: apartment-price-backend:1.5
+          image: apartment-price-backend:1.6
           imagePullPolicy: Never
 
           ports:
