@@ -1,33 +1,100 @@
+# ========================
+# Python environments
+# ========================
 .venv/
 .venv-monitoring/
-__pycache__/
-*.pyc
+venv/
+env/
 
+# ========================
+# Python cache
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ========================
+# Local environment files
+# ========================
+.env
+.env.*
+!.env.example
+
+# ========================
+# Logs
+# ========================
+*.log
+logs/
+
+# ========================
+# MLflow / MinIO local artifacts
+# ========================
 mlruns/
 mlartifacts/
-minio/data/
-local_artifacts/
-exported_model/
-
-node_modules/
-dist/
-.env
-*.log
-
-.DS_Store
-notes.txt
-notes.txt
-
-# Local MLflow / MinIO artifacts
 mlflow.db
+minio/data/
 minio-data/
-mlruns/
 artifact_test.txt
 teste_minio_mlflow.py
 
-# Python cache
-__pycache__/
-*.pyc
+# ========================
+# Model artifacts / exports
+# ========================
+local_artifacts/
+**/local_artifacts/
+exported_model/
+models/
 
-# Local environment
-.venv/
+# ========================
+# Drift / monitoring runtime reports
+# ========================
+reports/*.json
+reports/*.jsonl
+
+# Keep example reports if created intentionally
+!reports/examples/
+!reports/examples/*.json
+!reports/examples/*.jsonl
+
+# ========================
+# Frontend / Node
+# ========================
+node_modules/
+dist/
+frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ========================
+# Temporary debug scripts
+# ========================
+teste.py
+debug_*.py
+*_debug.py
+
+# ========================
+# Backup files
+# ========================
+*.bkp
+*.bak
+*.backup
+backend/app/main.py.bkp
+backend/app/main_before_new_schema.py
+
+# ========================
+# OS / editor files
+# ========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ========================
+# Notes / local scratch files
+# ========================
+notes.txt
